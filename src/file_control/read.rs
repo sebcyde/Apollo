@@ -69,9 +69,9 @@ pub mod read {
         match serde_json::from_str::<file_instrument_data>(&read_instruments) {
             Ok(instrument_data) => {
                 if is_before_today(&instrument_data.creation_date) {
-                    return Some(instrument_data.instruments);
+                    return None;
                 }
-                return None;
+                return Some(instrument_data.instruments);
             }
             Err(_) => {
                 print_message(THREAD::FILE, "None found.");

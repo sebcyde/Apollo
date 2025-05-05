@@ -10,7 +10,10 @@ use std::time::Duration;
 
 use dotenv::dotenv;
 use file_control::read::read::{get_instruments_from_file, get_positions_from_file};
-use file_control::write::write::{write_instruments_to_file, write_positions_to_file};
+use file_control::write::write::{
+    write_filtered_instruments_to_file, write_instruments_to_file, write_positions_to_file,
+};
+use helpers::filters::filtering::filter_trading212_instruments;
 use helpers::helpers::helpers::{print_message, THREAD};
 use lazy_static::lazy_static;
 use std::sync::{Arc, Mutex};
@@ -69,8 +72,12 @@ fn main() {
     dotenv().ok();
 
     // --------------------- Global Variables --------------------- //
-    let balance_arc: Arc<Mutex<BalanceObject>> = Arc::new(Mutex::new(BalanceObject::default()));
-    let c_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
+    let trading212_balance_arc: Arc<Mutex<BalanceObject>> =
+        Arc::new(Mutex::new(BalanceObject::default()));
+
+    let main_trading212_balance_arc: Arc<Mutex<BalanceObject>> =
+        Arc::clone(&trading212_balance_arc);
+
     // let b_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
     // let s_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
 
@@ -92,6 +99,9 @@ fn main() {
                         "Starting Trading212 Stock List Data Collection...",
                     );
                     let all_trading212_stocks_data: Vec<Instrument> = get_instruments();
+                    print_message(THREAD::COLLECTION, "Stock List Data Collected.");
+
+                    // Write Full List To "src/data/instruments.json"
                     write_instruments_to_file(all_trading212_stocks_data); //"src/data/instruments.json"
                     print_message(THREAD::COLLECTION, "Trading212 Stock List Data Updated.");
                 }
@@ -101,20 +111,59 @@ fn main() {
         })
         .expect("[Main Thread] Failed to spawn Stock List Data Collection thread");
 
-    print_message(
-        THREAD::MAIN,
-        "Creating 212 Account data collection thread...",
-    );
-    let trading212_account_data_collection_handle: JoinHandle<()> = thread::Builder::new()
-        .name("Trading212_Account_Data_Collection".to_string())
+    // --------------------- Trading212 Stock List Filtering Thread --------------------- //
+    print_message(THREAD::MAIN, "Creating 212 stock data filtering thread...");
+    let trading212_stock_list_filtering_handle: JoinHandle<()> = thread::Builder::new()
+        .name("Trading212_Stock_List_Filtering".to_string())
         .spawn(move || {
             loop {
                 // Check if current data is already from today
-                print_message(THREAD::COLLECTION, "Getting Trading212 Account Data");
+                print_message(
+                    THREAD::COLLECTION,
+                    "Checking Trading212 Stock List Data Validity...",
+                );
+
+                match get_instruments_from_file() {
+                    None => {
+                        std::thread::sleep(std::time::Duration::new(5, 0));
+                    }
+                    Some(instrument_data) => {
+                        print_message(THREAD::FILTER, "Running Filters...");
+
+                        // Write Filtered List To "src/data/filtered_instruments.json"
+                        let filtered_stocks_data: Vec<Instrument> =
+                            filter_trading212_instruments(filtered_stocks_data.clone());
+                        write_filtered_instruments_to_file(filtered_stocks_data);
+                    }
+                }
+
                 thread::sleep(Duration::from_secs(60 * 60)); // Every Hour
             }
         })
         .expect("[Main Thread] Failed to spawn Stock List Data Collection thread");
+
+    // print_message(
+    //     THREAD::MAIN,
+    //     "Creating 212 Account data collection thread...",
+    // );
+    // let trading212_account_data_collection_handle: JoinHandle<()> = thread::Builder::new()
+    //     .name("Trading212_Account_Data_Collection".to_string())
+    //     .spawn(move || {
+    //         loop {
+    //             // Check if current data is already from today
+    //             print_message(THREAD::COLLECTION, "Getting Trading212 Account Data");
+
+    //             let mut balance = main_trading212_balance_arc
+    //                 .lock()
+    //                 .expect("Failed to lock balance");
+
+    //             balance.total += 100.0; // Or whatever you want to do
+    //             println!("[Thread {}] Updated balance: {:?}", i, balance);
+
+    //             thread::sleep(Duration::from_secs(60 * 60)); // Every Hour
+    //         }
+    //     })
+    //     .expect("[Main Thread] Failed to spawn Stock List Data Collection thread");
 
     // --------------------- Trading 212 Account Information  --------------------- //
 
@@ -132,14 +181,7 @@ fn main() {
     // for current_position in current_positions {
     //     println!("\nPosition: {:?}", &current_position);
     // }
-
-    // let account_balance: Result<BalanceObject, serde_json::Error> = get_account_balance();
-    // println!("\nAccount Balance: {:?}", account_balance);
-
-    // let current_positions: Vec<Position> =
-    //     get_positions_from_file().expect("Failed to pull positions data from file");
-
     _ = trading212_stock_list_collection_handle.join();
-    _ = trading212_account_data_collection_handle.join();
+
     // _ = sell_handle.join();
 }

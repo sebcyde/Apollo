@@ -2,7 +2,11 @@ pub mod helpers {
 
     use serde::{Deserialize, Serialize};
 
-    use std::{env, time::SystemTime};
+    use std::{
+        env,
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
 
     use crate::{
         file_control::types::types::SaleResult,
@@ -71,6 +75,29 @@ pub mod helpers {
         return balance;
     }
 
+    pub fn update_account_balance(balance_arc: Arc<Mutex<BalanceObject>>) {
+        print_message(THREAD::COLLECTION, "Fetching Trading212 Balance data...");
+
+        let query: String = match *STOCK_VERSION {
+            VERSION::DEMO => String::from("https://demo.trading212.com/api/v0/equity/account/cash"),
+            VERSION::LIVE => String::from("https://live.trading212.com/api/v0/equity/account/cash"),
+        };
+
+        let raw_data: Option<serde_json::Value> = make_request(query);
+
+        let parsed_balance: Result<BalanceObject, serde_json::Error> =
+            serde_json::from_value(raw_data.unwrap());
+
+        print_message(THREAD::COLLECTION, "Updating Local Balance data...");
+
+        if let Ok(new_balance) = parsed_balance {
+            let mut balance = balance_arc.lock().expect("Failed to lock balance");
+            *balance = new_balance;
+            print_message(THREAD::COLLECTION, "Done.");
+        } else {
+            print_message(THREAD::COLLECTION, "Failed to parse balance.");
+        }
+    }
     ////////////////////////// DIVIDENDS //////////////////////////////////
 
     pub fn get_paid_dividends() -> Value {

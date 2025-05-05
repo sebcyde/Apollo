@@ -81,7 +81,51 @@ pub mod write {
             .expect("Instruments serialization failed");
 
         // Open the file with write permissions, create it if missing, truncate old contents
-        let file_path = "src/data/instruments.json";
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(file_path)
+            .expect("ST: Failed to open file for writing.");
+
+        // Lock it exclusively
+        file.lock_exclusive().expect("ST: Failed to lock the file.");
+
+        // Write the data
+        file.write_all(instrument_list.as_bytes())
+            .expect("ST: Failed to write instruments to file.");
+
+        // Unlock (optional – it'll drop on close too)
+        file.unlock().expect("ST: Failed to unlock the file.");
+
+        print_message(THREAD::FILE, "Done.");
+    }
+
+    pub fn write_filtered_instruments_to_file(instruments: Vec<Instrument>) {
+        print_message(THREAD::FILE, "Writing filtered instrument list to file...");
+
+        let file_path = "src/data/filtered_instruments.json";
+
+        std::fs::create_dir_all("src/data").expect("Failed to create data directory.");
+
+        if !std::path::Path::new(file_path).exists() {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(file_path)
+                .expect("Failed to create instrument file.");
+            print_message(THREAD::FILE, "Created missing instruments.json file.");
+        }
+
+        let instrument_data: file_instrument_data = file_instrument_data {
+            creation_date: get_current_date(DateType::DMY),
+            instruments,
+        };
+
+        let instrument_list = serde_json::to_string_pretty(&instrument_data)
+            .expect("Instruments serialization failed");
+
+        // Open the file with write permissions, create it if missing, truncate old contents
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)

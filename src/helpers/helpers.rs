@@ -24,6 +24,7 @@ pub mod helpers {
 
     pub enum THREAD {
         COLLECTION,
+        FILTER,
         CONTROL,
         MAIN,
         FILE,
@@ -34,6 +35,7 @@ pub mod helpers {
     pub fn print_message(thread: THREAD, message: &str) {
         let thread_name: String = match thread {
             THREAD::COLLECTION => String::from("[Collection Thread]"),
+            THREAD::FILTER => String::from("[Filtering Thread]"),
             THREAD::CONTROL => String::from("[Control Thread]"),
             THREAD::FILE => String::from("[File Thread]"),
             THREAD::MAIN => String::from("[Main Thread]"),

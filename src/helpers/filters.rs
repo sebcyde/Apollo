@@ -1,7 +1,31 @@
 pub mod filtering {
-    use crate::{helpers::types::types::FullCompanyInfo, FILTER_STRICTNESS, MINIMUM_MARKET_CAP};
+    use std::{thread, time::Duration};
+
+    use crate::{
+        helpers::types::types::FullCompanyInfo, trading212::types::types::Instrument,
+        FILTER_STRICTNESS, MINIMUM_MARKET_CAP,
+    };
 
     // Could add in sentiment creation based on recent company news
+    pub fn filter_trading212_instruments(full_stock_list: Vec<Instrument>) -> Vec<Instrument> {
+        let mut filtered_list: Vec<Instrument> = Vec::new();
+
+        for instrument in full_stock_list {
+            let raw_full_company_info: Option<FullCompanyInfo> =
+                get_full_company_info(instrument.clone());
+
+            let company_info: FullCompanyInfo = match raw_full_company_info {
+                Some(company_info) => company_info,
+                None => {
+                    println!("BT: Company info collection failed. Skipping...\n");
+                    thread::sleep(Duration::from_secs(5));
+                    continue;
+                }
+            };
+        }
+
+        filtered_list
+    }
 
     pub fn stock_passes_filters(company: &FullCompanyInfo) -> bool {
         println!("\nST: --- Applying filters...");
