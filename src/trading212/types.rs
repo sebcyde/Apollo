@@ -31,7 +31,7 @@ pub mod types {
         pub total: f64,
     }
 
-    #[derive(Debug, Serialize, Deserialize, Clone)]
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct Position {
         #[serde(rename = "averagePrice")]
         pub average_price: f64,

@@ -22,6 +22,27 @@ pub mod helpers {
     };
     use crate::{AMOUNT_OF_TICKERS_TO_BUY, MINIMUM_MARKET_CAP, SPEND_PERC};
 
+    pub enum THREAD {
+        COLLECTION,
+        CONTROL,
+        MAIN,
+        FILE,
+        BUY,
+        SELL,
+    }
+
+    pub fn print_message(thread: THREAD, message: &str) {
+        let thread_name: String = match thread {
+            THREAD::COLLECTION => String::from("[Collection Thread]"),
+            THREAD::CONTROL => String::from("[Control Thread]"),
+            THREAD::FILE => String::from("[File Thread]"),
+            THREAD::MAIN => String::from("[Main Thread]"),
+            THREAD::SELL => String::from("[Sell Thread]"),
+            THREAD::BUY => String::from("[Buy Thread]"),
+        };
+        println!("\n{thread_name} {message}.");
+    }
+
     pub fn sleep_thread(seconds: u64) {
         std::thread::sleep(std::time::Duration::from_secs(seconds));
     }
@@ -107,9 +128,25 @@ pub mod helpers {
         let available_for_trading: f64 = balance_data.free * (1.0 - (SPEND_PERC.clamp(0.0, 1.0)));
 
         let amount_per_ticker: f64 = available_for_trading / *AMOUNT_OF_TICKERS_TO_BUY as f64;
-        println!("BT: Spending {:?} per ticker.\n", amount_per_ticker);
+        println!("ST: Spending {:?} per ticker.\n", amount_per_ticker);
 
         amount_per_ticker
+    }
+
+    pub fn is_before_today(date_str: &str) -> bool {
+        // Parse the string into a NaiveDate using the known format
+        let parsed_date = NaiveDate::parse_from_str(date_str, "%d-%m-%Y");
+
+        match parsed_date {
+            Ok(date) => {
+                let today = Local::now().date_naive();
+                return date < today;
+            }
+            Err(e) => {
+                eprintln!("Failed to parse date '{}': {}", date_str, e);
+                return false;
+            }
+        }
     }
 
     pub fn get_current_date(datetype: DateType) -> String {
@@ -127,7 +164,7 @@ pub mod helpers {
     pub fn get_full_company_info(instrument: Instrument) -> Option<FullCompanyInfo> {
         let fh_ticker: &String = &convert_to_fh_ticker(&instrument.ticker);
 
-        println!("\n--- Starting info collection for {}...", fh_ticker);
+        println!("\nST: --- Starting info collection for {}...", fh_ticker);
 
         let company_info: CompanyInfo = match get_company_data(fh_ticker) {
             Some(raw_company_info) => match raw_company_info {
@@ -139,7 +176,7 @@ pub mod helpers {
 
         if company_info.market_capitalization < *MINIMUM_MARKET_CAP {
             println!(
-                "BT: Market Cap of {}m is below acceptable parameters.",
+                "ST: Market Cap of {}m is below acceptable parameters.",
                 company_info.market_capitalization.trunc() as i64
             );
             return None;
@@ -152,7 +189,7 @@ pub mod helpers {
 
         let company_quote: FHStockData = match company_quote_res {
             Err(e) => {
-                println!("Error fetching quote: {:?}", e);
+                println!("ST: Error fetching quote: {:?}", e);
                 return None;
             }
             Ok(company_quote) => company_quote,
@@ -191,13 +228,13 @@ pub mod helpers {
             insider_transactions: insider_data,
         };
 
-        println!("--- Info collection complete.");
+        println!("ST: --- Info collection complete.");
 
         Some(full_company_data)
     }
 
     fn get_insider_transactions(fh_ticker: &String) -> Option<Vec<InsiderTransaction>> {
-        println!("Fetching insider transactions...");
+        println!("ST: Fetching insider transactions...");
 
         let endpoint: String = format!(
             "https://finnhub.io/api/v1/stock/insider-transactions?symbol={}",
@@ -235,7 +272,7 @@ pub mod helpers {
         let final_string = format!("{}&to={}", start_date_str, end_date_str);
 
         println!(
-            "Fetching company news from {} to {}...",
+            "ST: Fetching company news from {} to {}...",
             &start_date_str, &end_date_str
         );
 
@@ -259,7 +296,7 @@ pub mod helpers {
     }
 
     fn get_company_peers(fh_ticker: &String) -> Option<Vec<String>> {
-        println!("Fetching company peers...");
+        println!("ST: Fetching company peers...");
 
         let endpoint: String =
             format!("https://finnhub.io/api/v1/stock/peers?symbol={}", fh_ticker);
@@ -280,7 +317,7 @@ pub mod helpers {
     }
 
     fn get_company_financials(fh_ticker: &String) -> Option<CompanyFinancials> {
-        println!("Fetching company financials...");
+        println!("ST: Fetching company financials...");
 
         let endpoint: String = format!(
             "https://finnhub.io/api/v1/stock/metric?symbol={}&metric=all",
@@ -311,7 +348,7 @@ pub mod helpers {
         let final_string = format!("{}&to={}", start_date_str, end_date_str);
 
         println!(
-            "Fetching company sentiment from {} to {}...",
+            "ST: Fetching company sentiment from {} to {}...",
             &start_date_str, &end_date_str
         );
 
@@ -338,6 +375,8 @@ pub mod helpers {
     }
 
     fn get_earnings_calendar(fh_ticker: &String) -> Option<Vec<EarningsRelease>> {
+        println!("ST: Fetching company earnings calendar...");
+
         let today = Utc::now();
         // from the past year
         let start_date = today - Duration::days(365);
@@ -346,7 +385,7 @@ pub mod helpers {
         let final_string = format!("{}&to={}", start_date_str, end_date_str);
 
         println!(
-            "BT: Fetching company earnings from {} to {}...",
+            "ST: Fetching company earnings from {} to {}...",
             &start_date_str, &end_date_str
         );
 

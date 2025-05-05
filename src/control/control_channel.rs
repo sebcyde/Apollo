@@ -94,42 +94,6 @@ pub mod control_channel {
                 }
             }
 
-            'instruments: loop {
-                // TODO - Check error handling
-                // Instruments update - in case of too many requests, keep trying until it gets data
-                println!("CT: Updating instruments data...");
-
-                let mut instrument_list: Vec<Instrument> = if should_get_new_instruments {
-                    println!("CT: Fetching new instruments data.");
-                    let mut fetched_instruments: Vec<Instrument> = get_instruments();
-                    fetched_instruments = shuffle_instruments(fetched_instruments);
-                    write_instruments_to_file(fetched_instruments.clone());
-                    should_get_new_instruments = !should_get_new_instruments;
-                    fetched_instruments
-                } else {
-                    println!("CT: Fetching instruments data from file.");
-                    let fetched_instruments: Option<Vec<Instrument>> = get_instruments_from_file();
-                    match fetched_instruments {
-                        Some(instrument_data) => instrument_data,
-                        None => {
-                            println!("CT: Failed to fetch instruments data from file.\nFetching new data...");
-                            let mut fetched_instruments: Vec<Instrument> = get_instruments();
-                            fetched_instruments = shuffle_instruments(fetched_instruments);
-                            write_instruments_to_file(fetched_instruments.clone());
-                            fetched_instruments
-                        }
-                    }
-                };
-
-                let mut instruments: MutexGuard<Vec<Instrument>> =
-                    data.arc_instruments_value.lock().unwrap();
-                instruments.clear();
-                instruments.append(&mut instrument_list);
-
-                println!("CT: Instruments data updated.\n");
-                break 'instruments;
-            }
-
             'positions: loop {
                 // instruments update - in case of too many requests, keep trying until it gets data
                 println!("CT: Updating positions data...");

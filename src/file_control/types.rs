@@ -1,7 +1,13 @@
 pub mod types {
     use serde::{Deserialize, Serialize};
 
-    use crate::trading212::types::types::{HistoricalOrder, Instrument};
+    use crate::trading212::types::types::{HistoricalOrder, Instrument, Position};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct file_current_trading212_positions_data {
+        pub positions: Vec<Position>,
+        pub creation_date: String,
+    }
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct file_instrument_data {

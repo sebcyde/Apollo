@@ -5,14 +5,16 @@ mod helpers;
 mod trading212;
 
 use std::sync::mpsc;
-use std::thread::{self};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-use control::buy_channel::buy_channel::start_buying;
-use control::control_channel::control_channel::start_control;
-use control::sell_channel::sell_channel::start_selling;
 use dotenv::dotenv;
+use file_control::read::read::{get_instruments_from_file, get_positions_from_file};
+use file_control::write::write::{write_instruments_to_file, write_positions_to_file};
+use helpers::helpers::helpers::{print_message, THREAD};
 use lazy_static::lazy_static;
 use std::sync::{Arc, Mutex};
+use trading212::helpers::helpers::{get_account_balance, get_all_positions, get_instruments};
 use trading212::types::types::{BalanceObject, Instrument};
 use trading212::types::types::{LimitOrder, Position};
 
@@ -63,248 +65,81 @@ pub struct ChannelParam {
 }
 
 fn main() {
-    println!("\nStarting Friday...");
+    print_message(THREAD::MAIN, "Starting Apollo...");
     dotenv().ok();
 
-    // --------------------- VARIABLES --------------------- //
-
-    // Account Balance
+    // --------------------- Global Variables --------------------- //
     let balance_arc: Arc<Mutex<BalanceObject>> = Arc::new(Mutex::new(BalanceObject::default()));
     let c_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
-    let b_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
-    let s_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
-
-    // Instruments
-    let instruments_arc: Arc<Mutex<Vec<Instrument>>> = Arc::new(Mutex::new(Vec::new()));
-    let c_instruments_arc: Arc<Mutex<Vec<Instrument>>> = Arc::clone(&instruments_arc);
-    let b_instruments_arc: Arc<Mutex<Vec<Instrument>>> = Arc::clone(&instruments_arc);
-    let s_instruments_arc: Arc<Mutex<Vec<Instrument>>> = Arc::clone(&instruments_arc);
-
-    // Current Positions
-    let positions_arc: Arc<Mutex<Vec<Position>>> = Arc::new(Mutex::new(Vec::new()));
-    let c_positions_arc: Arc<Mutex<Vec<Position>>> = Arc::clone(&positions_arc);
-    let b_positions_arc: Arc<Mutex<Vec<Position>>> = Arc::clone(&positions_arc);
-    let s_positions_arc: Arc<Mutex<Vec<Position>>> = Arc::clone(&positions_arc);
-
-    // Limit Orders
-    let limit_order_arc: Arc<Mutex<Vec<LimitOrder>>> = Arc::new(Mutex::new(Vec::new()));
-    let c_limit_order_arc: Arc<Mutex<Vec<LimitOrder>>> = Arc::clone(&limit_order_arc);
-    let b_limit_order_arc: Arc<Mutex<Vec<LimitOrder>>> = Arc::clone(&limit_order_arc);
-    let s_limit_order_arc: Arc<Mutex<Vec<LimitOrder>>> = Arc::clone(&limit_order_arc);
+    // let b_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
+    // let s_balance_arc: Arc<Mutex<BalanceObject>> = Arc::clone(&balance_arc);
 
     //
-    //
-
-    // --------------------- CHANNELS --------------------- //
-    println!("\nCreating channels...");
-
-    // For signalling data updates from Control thread
-    let (ctrl_to_buy_tx, ctrl_to_buy_rx) = mpsc::channel::<bool>();
-    let (ctrl_to_sell_tx, ctrl_to_sell_rx) = mpsc::channel::<bool>();
-
-    // Sell to Buy
-    let (sell_to_buy_tx, sell_to_buy_rx) = mpsc::channel::<bool>();
-
-    // Sell to control
-    let (sell_to_ctrl_tx, sell_to_ctrl_rx) = mpsc::channel::<bool>();
-
-    // Buy to Sell
-    let (buy_to_sell_tx, buy_to_sell_rx) = mpsc::channel::<bool>();
-
-    println!("Done.");
-
-    //
-    //
-
-    // --------------------- THREADS --------------------- //
-    println!("\nCreating control thread...");
-
-    let control_start_params: ChannelParam = ChannelParam {
-        arc_instruments_value: c_instruments_arc,
-        arc_positions_value: c_positions_arc,
-        arc_limits_value: c_limit_order_arc,
-        arc_balance_value: c_balance_arc,
-    };
-
-    let control_handle = thread::Builder::new()
-        .name("Control".to_string())
+    // --------------------- Trading212 Stock List Data Collection Thread --------------------- //
+    print_message(THREAD::MAIN, "Creating 212 stock data collection thread...");
+    let trading212_stock_list_collection_handle: JoinHandle<()> = thread::Builder::new()
+        .name("Trading212_Stock_List_Collection".to_string())
         .spawn(move || {
-            start_control(
-                ctrl_to_sell_tx,
-                ctrl_to_buy_tx,
-                sell_to_ctrl_rx,
-                control_start_params,
-            );
+            loop {
+                // Check if current data is already from today
+                print_message(
+                    THREAD::COLLECTION,
+                    "Checking Trading212 Stock List Data Validity...",
+                );
+                if get_instruments_from_file().is_none() {
+                    print_message(
+                        THREAD::COLLECTION,
+                        "Starting Trading212 Stock List Data Collection...",
+                    );
+                    let all_trading212_stocks_data: Vec<Instrument> = get_instruments();
+                    write_instruments_to_file(all_trading212_stocks_data); //"src/data/instruments.json"
+                    print_message(THREAD::COLLECTION, "Trading212 Stock List Data Updated.");
+                }
+
+                thread::sleep(Duration::from_secs(60 * 60)); // Every Hour
+            }
         })
-        .expect("Failed to spawn Control thread");
+        .expect("[Main Thread] Failed to spawn Stock List Data Collection thread");
 
-    println!("Done.");
-
-    //
-
-    println!("\nCreating buying thread...");
-
-    let buy_start_params: ChannelParam = ChannelParam {
-        arc_instruments_value: b_instruments_arc,
-        arc_positions_value: b_positions_arc,
-        arc_limits_value: b_limit_order_arc,
-        arc_balance_value: b_balance_arc,
-    };
-
-    // Buy Thread
-    let buy_handle = thread::Builder::new()
-        .name("Buy".to_string())
+    print_message(
+        THREAD::MAIN,
+        "Creating 212 Account data collection thread...",
+    );
+    let trading212_account_data_collection_handle: JoinHandle<()> = thread::Builder::new()
+        .name("Trading212_Account_Data_Collection".to_string())
         .spawn(move || {
-            start_buying(
-                ctrl_to_buy_rx,
-                sell_to_buy_rx,
-                buy_to_sell_tx,
-                buy_start_params,
-            );
+            loop {
+                // Check if current data is already from today
+                print_message(THREAD::COLLECTION, "Getting Trading212 Account Data");
+                thread::sleep(Duration::from_secs(60 * 60)); // Every Hour
+            }
         })
-        .expect("Failed to spawn Buy thread");
+        .expect("[Main Thread] Failed to spawn Stock List Data Collection thread");
 
-    println!("Done.");
+    // --------------------- Trading 212 Account Information  --------------------- //
 
-    //
+    // let current_positions_raw_data: Vec<Position> =
+    //     get_all_positions().expect("Failed to get positions from API.");
+    // if current_positions_raw_data.len() > 0 {
+    //     write_positions_to_file(current_positions_raw_data); // "src/data/current_positions.json"
+    //     println!("\nCurrent positions retreived and written to storage.\n");
+    // }
 
-    println!("\nCreating selling thread...");
+    // let current_positions: Vec<Position> =
+    //     get_positions_from_file().expect("Failed to pull positions data from file");
 
-    let sell_start_params: ChannelParam = ChannelParam {
-        arc_instruments_value: s_instruments_arc,
-        arc_positions_value: s_positions_arc,
-        arc_limits_value: s_limit_order_arc,
-        arc_balance_value: s_balance_arc,
-    };
+    // // For Debugging
+    // for current_position in current_positions {
+    //     println!("\nPosition: {:?}", &current_position);
+    // }
 
-    // Sell Thread
-    let sell_handle = thread::Builder::new()
-        .name("Sell".to_string())
-        .spawn(move || {
-            start_selling(
-                ctrl_to_sell_rx,
-                sell_to_ctrl_tx,
-                sell_to_buy_tx,
-                buy_to_sell_rx,
-                sell_start_params,
-            );
-        })
-        .expect("Failed to spawn Sell thread");
+    // let account_balance: Result<BalanceObject, serde_json::Error> = get_account_balance();
+    // println!("\nAccount Balance: {:?}", account_balance);
 
-    println!("Done.");
-    // ------------------- END OF THREADS ------------------- //
+    // let current_positions: Vec<Position> =
+    //     get_positions_from_file().expect("Failed to pull positions data from file");
 
-    //
-    //
-
-    // --------------------- EXECUTION --------------------- //
-    println!("\nStarting...\n");
-
-    _ = control_handle.join();
-    _ = buy_handle.join();
-    _ = sell_handle.join();
-
-    println!("\nDone.");
-    // ------------------- END OF EXECUTION ------------------- //
-
-    // TODO - create an arc mutex to hold commonly accessed data
-    // ex balance, current positions, limit orders etv
-
-    // TODO - some kind of lockon pulling account balance data to avoid rate limit collisions
-
-    // let buy_thread_handle = thread::Builder::new()
-    //     .name(format!("Buying-Thread"))
-    //     .spawn(|| loop {
-    //         println!("\n--------------------- STARTING BUY CYCLE ---------------------\n");
-
-    //         if !is_market_open() {
-    //             // Sleep 1 hour then restart buy cycle
-    //             println!("\n--------------------- B: MARKET CLOSED ---------------------\n");
-    //             sleep_thread(3600);
-    //             continue;
-    //         }
-
-    //         let raw_balance_data: Result< BalanceObject, serde_json::Error> = get_account_balance();
-    //         if raw_balance_data.is_err() {
-    //             sleep_thread(180);
-    //             continue;
-    //         }
-
-    //         let balance_data: BalanceObject = raw_balance_data.unwrap();
-
-    //         if balance_data.free < *MINIMUM_BALANCE {
-    //             // Sleep until sell cycle re-triggers to free up funds
-    //             println!("\n--------------------- LOW BALANCE - SKIPPING BUY CYCLE ---------------------\n");
-    //             sleep_thread(*LIMIT_WAIT_SECONDS);
-    //             continue;
-    //         }
-
-    //         let instruments: Vec<Instrument> = match get_instruments_from_file() {
-    //             Some(existing_instruments) => shuffle_instruments(existing_instruments),
-    //             None => {
-    //                 // If no instruments exist, fetch new ones and save them to file
-    //                 let mut fetched_instruments: Vec<Instrument> = get_instruments();
-    //                 fetched_instruments = shuffle_instruments(fetched_instruments);
-    //                 write_instruments_to_file(fetched_instruments.clone());
-    //                 fetched_instruments
-    //             }
-    //         };
-
-    //         println!("\nB: Fetched {} Instruments.", instruments.len());
-    //         println!("B: Available Account Balance: {:?}\n", balance_data.free);
-
-    //         println!("\n--------------------- EXECUTING BUYS ---------------------\n");
-    //         execute_buys(instruments, &balance_data);
-    //         println!("\n--------------------- BUYS COMPLETE ---------------------\n");
-
-    //         sleep_thread(*LIMIT_WAIT_SECONDS);
-    //     })
-    //     .expect("Failed to activate buying thread");
-
-    // let sell_thread_handle = thread::Builder::new()
-    //     .name(format!("Selling-Thread"))
-    //     .spawn(|| loop {
-    //         if !is_market_open() {
-    //             // Sleep 1 hour then restart sell cycle
-    //             println!("\n--------------------- S: MARKET CLOSED ---------------------\n");
-    //             sleep_thread(3600);
-    //             continue;
-    //         }
-
-    //         sleep_thread(180);
-
-    //         println!("\n--------------------- STARTING SELL CYCLE ---------------------\n");
-
-    //         let raw_balance_data = get_account_balance();
-    //         if raw_balance_data.is_err() {
-    //             sleep_thread(180);
-    //             continue;
-    //         }
-
-    //         let balance_data: BalanceObject = raw_balance_data.unwrap();
-
-    //         let start_time: String = get_current_time();
-    //         let results: Vec<HistoricalOrder> = execute_sells(&start_time);
-
-    //         println!("\n--------------------- UPDATING SELL LOGS ---------------------\n");
-    //         sleep_thread(30);
-
-    //         let new_raw_balance_data = get_account_balance();
-    //         if new_raw_balance_data.is_err() {
-    //             sleep_thread(180);
-    //             continue;
-    //         }
-
-    //         let new_balance_data: BalanceObject = new_raw_balance_data.unwrap();
-
-    //         log_cycle_result(start_time, results, new_balance_data.ppl - balance_data.ppl);
-
-    //         println!("\n--------------------- SELL CYCLE COMPLETE ---------------------\n");
-
-    //         sleep_thread(*LIMIT_WAIT_SECONDS);
-    //     })
-    //     .expect("Failed to activate selling thread");
-
-    // _ = sell_thread_handle.join();
-    // _ = buy_thread_handle.join();
+    _ = trading212_stock_list_collection_handle.join();
+    _ = trading212_account_data_collection_handle.join();
+    // _ = sell_handle.join();
 }

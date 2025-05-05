@@ -2,12 +2,17 @@ pub mod read {
     use std::path::PathBuf;
 
     use crate::{
-        file_control::types::types::file_instrument_data,
+        file_control::types::types::{
+            file_current_trading212_positions_data, file_instrument_data,
+        },
         helpers::{
-            helpers::helpers::{get_current_date, get_current_hours, is_first_date_before},
+            helpers::helpers::{
+                get_current_date, get_current_hours, is_before_today, is_first_date_before,
+                print_message, THREAD,
+            },
             types::types::{DateType, FullCompanyInfo},
         },
-        trading212::types::types::Instrument,
+        trading212::types::types::{Instrument, Position},
     };
 
     pub fn get_dir_path() -> PathBuf {
@@ -16,45 +21,60 @@ pub mod read {
         path
     }
 
+    pub fn get_positions_from_file() -> Option<Vec<Position>> {
+        println!("\nST: Reading position data from file...");
+
+        let read_positions: String =
+            match std::fs::read_to_string("src/data/current_positions.json").ok() {
+                None => {
+                    println!("ST: None found.");
+                    return None;
+                }
+                Some(read_positions) => read_positions,
+            };
+
+        if read_positions.is_empty() {
+            println!("ST: None found.");
+            return None;
+        }
+
+        match serde_json::from_str::<file_current_trading212_positions_data>(&read_positions) {
+            Ok(positions_data) => {
+                return Some(positions_data.positions);
+            }
+            Err(_) => {
+                println!("ST: None found.");
+                return None;
+            }
+        }
+    }
+
     pub fn get_instruments_from_file() -> Option<Vec<Instrument>> {
-        println!("\nST: Reading instrument data from file...");
+        print_message(THREAD::FILE, "Reading instrument data from file...");
 
         let read_instruments: String =
             match std::fs::read_to_string("src/data/instruments.json").ok() {
                 None => {
-                    println!("ST: None found.");
+                    print_message(THREAD::FILE, "None found.");
                     return None;
                 }
                 Some(read_instruments) => read_instruments,
             };
 
         if read_instruments.is_empty() {
-            println!("ST: None found.");
+            print_message(THREAD::FILE, "None found.");
             return None;
         }
 
         match serde_json::from_str::<file_instrument_data>(&read_instruments) {
             Ok(instrument_data) => {
-                println!("ST: Checking validity of data...");
-
-                let current_date: String = get_current_date(DateType::DMY);
-                if is_first_date_before(&instrument_data.creation_date, &current_date) {
-                    println!("ST: Data out of date.");
-                    return None;
-                };
-
-                // TODO
-                // let current_hours: String = get_current_hours();
-                // if is_first_hours_before(&instrument_data.creation_date, &current_hours) {
-                //     println!("ST: Data out of date.");
-                //     return None;
-                // }
-
-                println!("ST: Done.");
-                return Some(instrument_data.instruments);
+                if is_before_today(&instrument_data.creation_date) {
+                    return Some(instrument_data.instruments);
+                }
+                return None;
             }
             Err(_) => {
-                println!("ST: None found.");
+                print_message(THREAD::FILE, "None found.");
                 return None;
             }
         }

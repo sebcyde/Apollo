@@ -9,7 +9,7 @@ pub mod helpers {
         helpers::{
             helpers::helpers::{
                 calc_perc_change, calculate_amount_spent_per_ticker, chop_two_after_dec,
-                round_down, shuffle_positions, sleep_thread,
+                print_message, round_down, shuffle_positions, sleep_thread, THREAD,
             },
             types::types::FullCompanyInfo,
         },
@@ -642,7 +642,8 @@ pub mod helpers {
     }
 
     pub fn get_instruments() -> Vec<Instrument> {
-        println!("\nCT: Fetching new instruments data...");
+        print_message(THREAD::COLLECTION, "Fetching new instruments data...");
+
         let query: String = match *STOCK_VERSION {
             VERSION::DEMO => {
                 String::from("https://demo.trading212.com/api/v0/equity/metadata/instruments")
@@ -654,7 +655,7 @@ pub mod helpers {
 
         let raw_data: Option<serde_json::Value> = make_request(query);
         let data: Value = raw_data.unwrap();
-        println!("CT: Fetch Successful.");
+        print_message(THREAD::COLLECTION, "Fetch Successful.");
 
         return from_value(data).unwrap();
     }
